@@ -17,12 +17,30 @@ import           Control.Monad
 
 type ErrorReason = String
 
+type SourceLine = Integer
+
+type SourceColumn = Integer
+
+data SourcePoint = SourcePoint
+  { sourceLine   :: SourceLine
+  , sourceColumn :: SourceColumn
+  } deriving (Eq, Ord, Show)
+
+nextSourceLine :: SourcePoint -> SourcePoint
+nextSourceLine point = SourcePoint ((sourceLine point) + 1) (sourceColumn point)
+
+nextSourceColumn :: SourcePoint -> SourcePoint
+nextSourceColumn point = SourcePoint (sourceLine point) ((sourceColumn point) + 1)
+
 newtype Parser a = Parser
     -- The parser result is a pair, whose
     -- - first element is either an ErrorReason containing information about the error, or the result
     -- - second element is the remaining characters to read
   { parse :: String -> (Either ErrorReason a, String)
   }
+
+runParser :: Parser a -> String -> (Either ErrorReason a, String)
+runParser = parse
 
 item :: Parser Char
 item =
@@ -77,8 +95,11 @@ option :: Parser a -> Parser a -> Parser a
 option (Parser pa1) (Parser pa2) =
   Parser $ \input ->
     case pa1 input of
-      (Left errInfo, remaining) -> pa2 input
-      result                    -> result
+      err@(Left errInfo, remaining) ->
+        if remaining == input
+          then pa2 input
+          else err
+      result -> result
 
 instance Alternative Parser where
   empty = failure

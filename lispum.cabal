@@ -18,8 +18,16 @@ executable lispum
   main-is:             Main.hs
   default-language:    Haskell2010
   build-depends:       base >= 4.7 && < 5
+                       , containers >= 0.6.0.1
+                       , mtl
   other-modules:
-      Parsing.Primitives
+      Prompt
+      Parsing.Primitives,
+      Parsing.Combinators,
+      Parsing.Token,
+      Lisp
+      LispParser
+      LispEvaluator
 
 
 test-suite lispum-test
@@ -33,6 +41,8 @@ test-suite lispum-test
       , hspec
   other-modules:
       Parsing.Primitives,
-      Parsing.PrimitivesSpec
+      Parsing.PrimitivesSpec,
+      Parsing.Combinators,
+      Parsing.CombinatorsSpec
 
   default-language: Haskell2010
