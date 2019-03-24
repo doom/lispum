@@ -4,8 +4,8 @@ import Control.Monad.Except
 import qualified Lisp
 import qualified LispEvaluator
 import qualified LispParser
-import           Parsing.Combinators
-import           Parsing.Primitives
+import           Synapto.Combinators
+import           Synapto.Primitives
 import           Prompt
 
 readExpr :: String -> Lisp.ThrowsLispError Lisp.LispValue

@@ -4,9 +4,9 @@ module LispParser
 
 import           Control.Applicative
 import           Lisp
-import           Parsing.Combinators
-import           Parsing.Primitives
-import           Parsing.Token
+import           Synapto.Combinators
+import           Synapto.Primitives
+import           Synapto.Token
 
 symbol :: Parser Char
 symbol = oneOf "!#$%&|*+-/:<=>?@^_~"

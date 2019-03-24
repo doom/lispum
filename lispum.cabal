@@ -20,29 +20,9 @@ executable lispum
   build-depends:       base >= 4.7 && < 5
                        , containers >= 0.6.0.1
                        , mtl
+                       , synapto
   other-modules:
       Prompt
-      Parsing.Primitives,
-      Parsing.Combinators,
-      Parsing.Token,
       Lisp
       LispParser
       LispEvaluator
-
-
-test-suite lispum-test
-  type: exitcode-stdio-1.0
-  main-is: Spec.hs
-  hs-source-dirs:
-      test src
-  ghc-options: -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      base >=4.7 && <5
-      , hspec
-  other-modules:
-      Parsing.Primitives,
-      Parsing.PrimitivesSpec,
-      Parsing.Combinators,
-      Parsing.CombinatorsSpec
-
-  default-language: Haskell2010

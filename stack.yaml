@@ -35,10 +35,14 @@ resolver: lts-13.11
 #  - wai
 packages:
 - .
+
 # Dependency packages to be pulled from upstream that are not in the resolver
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 # extra-deps: []
+extra-deps:
+- github: doom/synapto
+  commit: d91eac071c62c62f14f6116a3a8d6680ddce6857
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
