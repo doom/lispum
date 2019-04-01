@@ -1,77 +1,113 @@
 module LispEvaluator
   ( eval
+  , builtinEnv
   ) where
 
 import           Control.Monad.Except
+import           Data.IORef
 import qualified Data.Map.Strict      as MapStrict
-import qualified Lisp
+import           Lisp
 
-callLispFunction :: Lisp.Function -> [Lisp.Value] -> Lisp.ThrowsError Lisp.Value
+isBoundVariable :: Env -> String -> IO Bool
+isBoundVariable env name = do
+  env <- readIORef env
+  return . maybe False (const True) . MapStrict.lookup name $ env
+
+getBoundVariable :: Env -> String -> IOThrowsError Value
+getBoundVariable env name = do
+  env <- liftIO $ readIORef env
+  maybe (throwError $ UnboundVariable "" name) (liftIO . readIORef) . MapStrict.lookup name $ env
+
+setVariable :: Env -> String -> Value -> IOThrowsError Value
+setVariable env name val = do
+  env <- liftIO $ readIORef env
+  maybe (throwError $ UnboundVariable "" name) (liftIO . (flip writeIORef val)) . MapStrict.lookup name $ env
+  return val
+
+defineVariable :: Env -> String -> Value -> IOThrowsError Value
+defineVariable env name val = do
+  alreadyDefined <- liftIO $ isBoundVariable env name
+  if alreadyDefined
+    then setVariable env name val
+    else liftIO $ do
+           valueRef <- newIORef val
+           envIO <- readIORef env
+           writeIORef env $ MapStrict.insert name valueRef envIO
+           return val
+
+callUserDefinedFunction :: Value -> [Value] -> IOThrowsError Value
+callUserDefinedFunction (Lisp.Function params body env) args =
+  (liftIO $ defineInEnv env (MapStrict.fromList $ zip params args)) >>= evalBody
+  where
+    evalBody env = liftM last $ mapM (eval env) body
+
+callLispFunction :: Value -> [Value] -> IOThrowsError Value
 callLispFunction f args =
-  if Lisp.validateArguments (Lisp.argSpec f) (toInteger $ length args)
-    then Lisp.call f $ args
-    else throwError $ Lisp.ArgsNumberMismatch (Lisp.argSpec f) args
+  if validateArguments f (toInteger $ length args)
+    then call f args
+    else throwError $ ArgsNumberMismatch (argSpec f) args
+  where
+    call (Lisp.BuiltinFunction _ doCall) args = liftThrows $ doCall args
+    call f args                               = callUserDefinedFunction f args
 
-unwrapNumber :: Lisp.Value -> Lisp.ThrowsError Integer
-unwrapNumber (Lisp.Number n) = return n
-unwrapNumber v               = throwError $ Lisp.TypeMismatch "number" v
+unwrapNumber :: Value -> ThrowsError Integer
+unwrapNumber (Number n) = return n
+unwrapNumber v          = throwError $ TypeMismatch "number" v
 
-unwrapString :: Lisp.Value -> Lisp.ThrowsError String
-unwrapString (Lisp.String s) = return s
-unwrapString v               = throwError $ Lisp.TypeMismatch "string" v
+unwrapString :: Value -> ThrowsError String
+unwrapString (String s) = return s
+unwrapString v          = throwError $ TypeMismatch "string" v
 
-unwrapBool :: Lisp.Value -> Lisp.ThrowsError Bool
-unwrapBool (Lisp.Bool b) = return b
-unwrapBool v             = throwError $ Lisp.TypeMismatch "bool" v
+unwrapBool :: Value -> ThrowsError Bool
+unwrapBool (Bool b) = return b
+unwrapBool v        = throwError $ TypeMismatch "bool" v
 
-unwrapList :: Lisp.Value -> Lisp.ThrowsError [Lisp.Value]
-unwrapList (Lisp.List l) = return l
-unwrapList v             = throwError $ Lisp.TypeMismatch "list" v
+unwrapList :: Value -> ThrowsError [Value]
+unwrapList (List l) = return l
+unwrapList v        = throwError $ TypeMismatch "list" v
 
-numToNumBinop :: (Integer -> Integer -> Integer) -> Lisp.Function
+numToNumBinop :: (Integer -> Integer -> Integer) -> Value
 numToNumBinop f =
-  Lisp.Function
-    {Lisp.argSpec = Lisp.AtLeast 2, Lisp.call = \args -> (mapM unwrapNumber args >>= return . Lisp.Number . foldl1 f)}
+  BuiltinFunction {argSpec = AtLeast 2, call = \args -> (mapM unwrapNumber args >>= return . Number . foldl1 f)}
 
-toBoolBinop :: (Lisp.Value -> Lisp.ThrowsError a) -> (a -> a -> Bool) -> Lisp.Function
+toBoolBinop :: (Value -> ThrowsError a) -> (a -> a -> Bool) -> Value
 toBoolBinop unwrap f =
-  Lisp.Function
-    { Lisp.argSpec = Lisp.Exactly 2
-    , Lisp.call =
+  BuiltinFunction
+    { argSpec = Exactly 2
+    , call =
         \[a1, a2] -> do
           first <- unwrap a1
           second <- unwrap a2
-          return $ Lisp.Bool $ f first second
+          return $ Bool $ f first second
     }
 
--- (mapM unwrap args >>= return . Lisp.Bool . foldl1 f)}
-numToBoolBinop :: (Integer -> Integer -> Bool) -> Lisp.Function
+numToBoolBinop :: (Integer -> Integer -> Bool) -> Value
 numToBoolBinop = toBoolBinop unwrapNumber
 
-stringToBoolBinop :: (String -> String -> Bool) -> Lisp.Function
+stringToBoolBinop :: (String -> String -> Bool) -> Value
 stringToBoolBinop = toBoolBinop unwrapString
 
-car :: [Lisp.Value] -> Lisp.ThrowsError Lisp.Value
-car [Lisp.List (h:_)] = return h
-car [x]               = throwError $ Lisp.TypeMismatch "list" x
+car :: [Value] -> ThrowsError Value
+car [List (h:_)] = return h
+car [x]          = throwError $ TypeMismatch "list" x
 
-carFunction :: Lisp.Function
-carFunction = Lisp.Function {Lisp.argSpec = Lisp.Exactly 1, Lisp.call = car}
+carFunction :: Value
+carFunction = BuiltinFunction {argSpec = Exactly 1, call = car}
 
-cdr :: [Lisp.Value] -> Lisp.ThrowsError Lisp.Value
-cdr [Lisp.List (_:t)] = return $ Lisp.List t
-cdr [x]               = throwError $ Lisp.TypeMismatch "list" x
+cdr :: [Value] -> ThrowsError Value
+cdr [List (_:t)] = return $ List t
+cdr [x]          = throwError $ TypeMismatch "list" x
 
-cdrFunction :: Lisp.Function
-cdrFunction = Lisp.Function {Lisp.argSpec = Lisp.Exactly 1, Lisp.call = cdr}
+cdrFunction :: Value
+cdrFunction = BuiltinFunction {argSpec = Exactly 1, call = cdr}
 
-cons :: [Lisp.Value] -> Lisp.ThrowsError Lisp.Value
-cons [x, Lisp.List l] = return $ Lisp.List $ x : l
+cons :: [Value] -> ThrowsError Value
+cons [x, List l] = return $ List $ x : l
 
-consFunction :: Lisp.Function
-consFunction = Lisp.Function {Lisp.argSpec = Lisp.Exactly 2, Lisp.call = cons}
+consFunction :: Value
+consFunction = BuiltinFunction {argSpec = Exactly 2, call = cons}
 
-builtinFunctions :: MapStrict.Map String Lisp.Function
+builtinFunctions :: MapStrict.Map String Value
 builtinFunctions =
   MapStrict.fromList
     [ ("+", numToNumBinop (+))
@@ -96,18 +132,36 @@ builtinFunctions =
     , ("cons", consFunction)
     ]
 
-eval :: Lisp.Value -> Lisp.ThrowsError Lisp.Value
-eval n@(Lisp.Number _) = return n
-eval s@(Lisp.String _) = return s
-eval b@(Lisp.Bool _) = return b
-eval (Lisp.List [Lisp.Atom "quote", value]) = return value
-eval (Lisp.List [Lisp.Atom "if", pred, ifTrue, ifFalse]) = do
-  result <- eval pred
+defineInEnv :: Env -> MapStrict.Map String Value -> IO Env
+defineInEnv env builtins = readIORef env >>= (addToEnv builtins) >>= newIORef
+  where
+    addToEnv builtins env = liftM (MapStrict.union env) (mapM makeDefinition builtins)
+    makeDefinition (val) = do
+      newVal <- newIORef val
+      return newVal
+
+builtinEnv :: IO Env
+builtinEnv = emptyEnv >>= flip defineInEnv builtinFunctions
+
+defineFunction env params body = return $ Lisp.Function (map show params) body env
+
+eval :: Env -> Value -> IOThrowsError Value
+eval _ n@(Number _) = return n
+eval _ s@(String _) = return s
+eval _ b@(Bool _) = return b
+eval _ (List [Atom "quote", value]) = return value
+eval env (Atom varName) = getBoundVariable env varName
+eval env (List [Atom "defvar", Atom varName, value]) = eval env value >>= defineVariable env varName
+eval env (List [Atom "set", Atom varName, value]) = eval env value >>= setVariable env varName
+eval env (List (Atom "defun":Atom fname:List params:body)) = defineFunction env params body >>= defineVariable env fname
+eval env (List (Atom "lambda":List params:body)) = defineFunction env params body
+eval env (List [Atom "if", pred, ifTrue, ifFalse]) = do
+  result <- eval env pred
   case result of
-    (Lisp.Bool True) -> eval ifTrue
-    otherwise        -> eval ifFalse
-eval (Lisp.List (Lisp.Atom function:arguments)) =
-  case MapStrict.lookup function builtinFunctions of
-    Just lispfunc -> mapM eval arguments >>= callLispFunction lispfunc
-    Nothing       -> throwError $ Lisp.NotAFunction function
-eval bad = throwError $ Lisp.InvalidSpecialForm bad
+    (Bool True) -> eval env ifTrue
+    otherwise   -> eval env ifFalse
+eval env (List (function:arguments)) = do
+  func <- eval env function
+  args <- mapM (eval env) arguments
+  callLispFunction func args
+eval _ bad = throwError $ InvalidSpecialForm bad

@@ -16,18 +16,24 @@ readExpr input =
         return expr
    in case parse result input of
         (Left errInfo, _) -> throwError $ Lisp.Invalid errInfo
-        (Right res, _)    -> LispEvaluator.eval res
+        (Right res, _)    -> return res
+
+evaluateToPrintable :: Lisp.Env -> String -> IO String
+evaluateToPrintable env expr =
+  Lisp.runIOThrows $ liftM show $ (Lisp.liftThrows $ readExpr expr) >>= LispEvaluator.eval env
+
+processLine :: Lisp.Env -> String -> IO ()
+processLine env expr = evaluateToPrintable env expr >>= putStrLn
+
+repeatPrompt :: IO (Maybe String) -> (String -> IO ()) -> IO ()
+repeatPrompt readStr f = do
+  str <- readStr
+  case str of
+    (Just str) -> f str >> repeatPrompt readStr f
+    Nothing    -> return ()
 
 replLoop :: IO ()
-replLoop = loop
-  where
-    loop = do
-      maybeInput <- prompt "> "
-      case maybeInput of
-        Nothing -> return ()
-        Just input -> do
-          putStrLn $ Lisp.extractValue $ Lisp.trapError $ liftM show $ readExpr input
-          loop
+replLoop = LispEvaluator.builtinEnv >>= repeatPrompt (prompt "> ") . processLine
 
 main :: IO ()
 main = replLoop

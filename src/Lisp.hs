@@ -1,15 +1,22 @@
 module Lisp
   ( Value(..)
+  , Env
   , Error(..)
-  , Function(..)
   , FunctionArgumentSpec(..)
+  , IOThrowsError
   , ThrowsError
-  , trapError
+  , emptyEnv
   , extractValue
+  , liftThrows
+  , runIOThrows
+  , trapError
   , validateArguments
   ) where
 
 import           Control.Monad.Except
+import           Data.IORef
+import           Data.List
+import qualified Data.Map.Strict      as MapStrict
 
 data Value
   = Atom String
@@ -17,13 +24,20 @@ data Value
   | String String
   | Bool Bool
   | List [Value]
+  | BuiltinFunction { argSpec :: FunctionArgumentSpec
+                    , call    :: ([Value] -> ThrowsError Value) }
+  | Function { params :: [String]
+             , body   :: [Value]
+             , env    :: Env }
 
 instance Show Value where
-  show (Atom a)   = a
+  show (Atom a) = a
   show (Number i) = (show i)
   show (String s) = "\"" ++ s ++ "\""
-  show (Bool b)   = (show b)
-  show (List l)   = "(" ++ (unwords . map show) l ++ ")"
+  show (Bool b) = (show b)
+  show (List l) = "(" ++ (unwords . map show) l ++ ")"
+  show (BuiltinFunction _ _) = "<builtin function>"
+  show (Function params _ _) = "(fun (" ++ (intercalate " " . map show) params ++ "))"
 
 data FunctionArgumentSpec
   = Exactly Integer
@@ -41,10 +55,13 @@ instance Show FunctionArgumentSpec where
     | n <= 1 = "at most " ++ show n ++ " argument"
     | otherwise = "at most " ++ show n ++ " arguments"
 
-validateArguments :: FunctionArgumentSpec -> Integer -> Bool
-validateArguments (Exactly n) = (== n)
-validateArguments (AtLeast n) = (>= n)
-validateArguments (AtMost n)  = (<= n)
+validateArguments :: Lisp.Value -> Integer -> Bool
+validateArguments (BuiltinFunction argSpec _) = check argSpec
+  where
+    check (Exactly n) = (== n)
+    check (AtLeast n) = (>= n)
+    check (AtMost n)  = (<= n)
+validateArguments (Function params _ _) = (== (toInteger $ length params))
 
 data Error
   = ArgsNumberMismatch FunctionArgumentSpec
@@ -72,7 +89,16 @@ trapError action = catchError action (return . show)
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
 
-data Function = Function
-  { argSpec :: FunctionArgumentSpec
-  , call    :: ([Value] -> ThrowsError Value)
-  }
+type Env = IORef (MapStrict.Map String (IORef Lisp.Value))
+
+emptyEnv :: IO Env
+emptyEnv = newIORef MapStrict.empty
+
+type IOThrowsError = ExceptT Lisp.Error IO
+
+liftThrows :: Lisp.ThrowsError a -> IOThrowsError a
+liftThrows (Left err)  = throwError err
+liftThrows (Right val) = return val
+
+runIOThrows :: IOThrowsError String -> IO String
+runIOThrows action = runExceptT (Lisp.trapError action) >>= return . Lisp.extractValue
