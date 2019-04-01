@@ -8,6 +8,7 @@ import           Prompt
 import           Synapto.Combinators
 import           Synapto.Primitives
 
+-- | Parse a LISP expression from a given string
 readExpr :: String -> Lisp.ThrowsError Lisp.Value
 readExpr input =
   let result = do
@@ -18,6 +19,7 @@ readExpr input =
         (Left errInfo, _) -> throwError $ Lisp.Invalid errInfo
         (Right res, _)    -> return res
 
+-- | Evaluate a string representing a LISP expression to a string representing the result
 evaluateToPrintable :: Lisp.Env -> String -> IO String
 evaluateToPrintable env expr =
   Lisp.runIOThrows $ liftM show $ (Lisp.liftThrows $ readExpr expr) >>= LispEvaluator.eval env

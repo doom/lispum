@@ -18,6 +18,7 @@ import           Data.IORef
 import           Data.List
 import qualified Data.Map.Strict      as MapStrict
 
+-- | A LISP value
 data Value
   = Atom String
   | Number Integer
@@ -39,6 +40,7 @@ instance Show Value where
   show (BuiltinFunction _ _) = "<builtin function>"
   show (Function params _ _) = "(fun (" ++ (intercalate " " . map show) params ++ "))"
 
+-- | A specification for a built-in function's arguments
 data FunctionArgumentSpec
   = Exactly Integer
   | AtLeast Integer
@@ -55,6 +57,7 @@ instance Show FunctionArgumentSpec where
     | n <= 1 = "at most " ++ show n ++ " argument"
     | otherwise = "at most " ++ show n ++ " arguments"
 
+-- | Check whether a given function can be called with a given number of arguments
 validateArguments :: Lisp.Value -> Integer -> Bool
 validateArguments (BuiltinFunction argSpec _) = check argSpec
   where
@@ -63,6 +66,7 @@ validateArguments (BuiltinFunction argSpec _) = check argSpec
     check (AtMost n)  = (<= n)
 validateArguments (Function params _ _) = (== (toInteger $ length params))
 
+-- | A LISP error
 data Error
   = ArgsNumberMismatch FunctionArgumentSpec
                        [Value]
@@ -72,7 +76,6 @@ data Error
   | InvalidSpecialForm Value
   | NotAFunction String
   | UnboundVariable String
-                    String
 
 instance Show Error where
   show (ArgsNumberMismatch n actual) = "expected " ++ show n ++ ", got: " ++ (unwords . map show) actual
@@ -80,7 +83,7 @@ instance Show Error where
   show (Invalid err) = "parse error: " ++ err
   show (InvalidSpecialForm form) = "invalid special form: '" ++ show form ++ "'"
   show (NotAFunction funcname) = funcname ++ " is not a function"
-  show (UnboundVariable msg varname) = "unbound variable '" ++ varname ++ "'"
+  show (UnboundVariable varname) = "unbound variable '" ++ varname ++ "'"
 
 type ThrowsError = Either Error
 
@@ -89,8 +92,10 @@ trapError action = catchError action (return . show)
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
 
+-- | A LISP "environment", i.e. the named variables available
 type Env = IORef (MapStrict.Map String (IORef Lisp.Value))
 
+-- | An empty LISP environment
 emptyEnv :: IO Env
 emptyEnv = newIORef MapStrict.empty
 

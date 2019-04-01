@@ -8,22 +8,27 @@ import           Data.IORef
 import qualified Data.Map.Strict      as MapStrict
 import           Lisp
 
+-- | Check whether a given environment binds a given name to a variable
 isBoundVariable :: Env -> String -> IO Bool
 isBoundVariable env name = do
   env <- readIORef env
   return . maybe False (const True) . MapStrict.lookup name $ env
 
+-- | Get a variable with a given name from a given environment
 getBoundVariable :: Env -> String -> IOThrowsError Value
 getBoundVariable env name = do
   env <- liftIO $ readIORef env
-  maybe (throwError $ UnboundVariable "" name) (liftIO . readIORef) . MapStrict.lookup name $ env
+  maybe (throwError $ UnboundVariable name) (liftIO . readIORef) . MapStrict.lookup name $ env
 
+-- | Set the value of an existing variable in a given environment
 setVariable :: Env -> String -> Value -> IOThrowsError Value
 setVariable env name val = do
   env <- liftIO $ readIORef env
-  maybe (throwError $ UnboundVariable "" name) (liftIO . (flip writeIORef val)) . MapStrict.lookup name $ env
+  maybe (throwError $ UnboundVariable name) (liftIO . (flip writeIORef val)) . MapStrict.lookup name $ env
   return val
 
+-- | Define a variable with a given name/value pair in a given environment
+-- | If the variable is already defined, its value is set instead
 defineVariable :: Env -> String -> Value -> IOThrowsError Value
 defineVariable env name val = do
   alreadyDefined <- liftIO $ isBoundVariable env name
@@ -35,12 +40,14 @@ defineVariable env name val = do
            writeIORef env $ MapStrict.insert name valueRef envIO
            return val
 
+-- | Call the given user-defined function with the given arguments
 callUserDefinedFunction :: Value -> [Value] -> IOThrowsError Value
 callUserDefinedFunction (Lisp.Function params body env) args =
   (liftIO $ defineInEnv env (MapStrict.fromList $ zip params args)) >>= evalBody
   where
     evalBody env = liftM last $ mapM (eval env) body
 
+-- | Call the given LISP function with the given arguments
 callLispFunction :: Value -> [Value] -> IOThrowsError Value
 callLispFunction f args =
   if validateArguments f (toInteger $ length args)
@@ -50,26 +57,32 @@ callLispFunction f args =
     call (Lisp.BuiltinFunction _ doCall) args = liftThrows $ doCall args
     call f args                               = callUserDefinedFunction f args
 
+-- | Unwrap a number from a LISP value, if possible
 unwrapNumber :: Value -> ThrowsError Integer
 unwrapNumber (Number n) = return n
 unwrapNumber v          = throwError $ TypeMismatch "number" v
 
+-- | Unwrap a string from a LISP value, if possible
 unwrapString :: Value -> ThrowsError String
 unwrapString (String s) = return s
 unwrapString v          = throwError $ TypeMismatch "string" v
 
+-- | Unwrap a boolean from a LISP value, if possible
 unwrapBool :: Value -> ThrowsError Bool
 unwrapBool (Bool b) = return b
 unwrapBool v        = throwError $ TypeMismatch "bool" v
 
+-- | Unwrap a list from a LISP value, if possible
 unwrapList :: Value -> ThrowsError [Value]
 unwrapList (List l) = return l
 unwrapList v        = throwError $ TypeMismatch "list" v
 
+-- | Lift a given binary function operating on integers to a LISP function operating on LISP values
 numToNumBinop :: (Integer -> Integer -> Integer) -> Value
 numToNumBinop f =
   BuiltinFunction {argSpec = AtLeast 2, call = \args -> (mapM unwrapNumber args >>= return . Number . foldl1 f)}
 
+-- | Given a function unwrapping LISP values, lift a binary predicate to a LISP function operating on LISP values
 toBoolBinop :: (Value -> ThrowsError a) -> (a -> a -> Bool) -> Value
 toBoolBinop unwrap f =
   BuiltinFunction
@@ -81,9 +94,11 @@ toBoolBinop unwrap f =
           return $ Bool $ f first second
     }
 
+-- | Given a predicate operating on numbers, lift it to operate on LISP values
 numToBoolBinop :: (Integer -> Integer -> Bool) -> Value
 numToBoolBinop = toBoolBinop unwrapNumber
 
+-- | Given a predicate operating on strings, lift it to operate on LISP values
 stringToBoolBinop :: (String -> String -> Bool) -> Value
 stringToBoolBinop = toBoolBinop unwrapString
 
@@ -91,6 +106,7 @@ car :: [Value] -> ThrowsError Value
 car [List (h:_)] = return h
 car [x]          = throwError $ TypeMismatch "list" x
 
+-- | Builtin for the CAR function
 carFunction :: Value
 carFunction = BuiltinFunction {argSpec = Exactly 1, call = car}
 
@@ -98,15 +114,18 @@ cdr :: [Value] -> ThrowsError Value
 cdr [List (_:t)] = return $ List t
 cdr [x]          = throwError $ TypeMismatch "list" x
 
+-- | Builtin for the CDR function
 cdrFunction :: Value
 cdrFunction = BuiltinFunction {argSpec = Exactly 1, call = cdr}
 
 cons :: [Value] -> ThrowsError Value
 cons [x, List l] = return $ List $ x : l
 
+-- | Builtin for the CONS function
 consFunction :: Value
 consFunction = BuiltinFunction {argSpec = Exactly 2, call = cons}
 
+-- | Builtin bindings for the builtin environment
 builtinFunctions :: MapStrict.Map String Value
 builtinFunctions =
   MapStrict.fromList
@@ -132,6 +151,7 @@ builtinFunctions =
     , ("cons", consFunction)
     ]
 
+-- | Import the given bindings into the given environments
 defineInEnv :: Env -> MapStrict.Map String Value -> IO Env
 defineInEnv env builtins = readIORef env >>= (addToEnv builtins) >>= newIORef
   where
@@ -140,11 +160,15 @@ defineInEnv env builtins = readIORef env >>= (addToEnv builtins) >>= newIORef
       newVal <- newIORef val
       return newVal
 
+-- | Builtin environment, populated with the builtin functions defined above
 builtinEnv :: IO Env
 builtinEnv = emptyEnv >>= flip defineInEnv builtinFunctions
 
+-- | Define a LISP function inside a given environment, given a list of parameters names and a list of expressions
+defineFunction :: Env -> [Value] -> [Value] -> IOThrowsError Value
 defineFunction env params body = return $ Lisp.Function (map show params) body env
 
+-- | Evaluate a LISP expression
 eval :: Env -> Value -> IOThrowsError Value
 eval _ n@(Number _) = return n
 eval _ s@(String _) = return s
