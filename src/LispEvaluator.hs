@@ -192,6 +192,12 @@ readFileExpressions fileName = (liftIO $ readFile fileName) >>= liftThrows . Lis
 evalFile :: Env -> String -> IOThrowsError Value
 evalFile env fileName = readFileExpressions fileName >>= liftM last . mapM (eval env)
 
+-- | Print a LISP value
+printFunction :: Value -> IOThrowsError Value
+printFunction val = do
+  liftIO $ print val
+  liftThrows $ return $ Bool True
+
 -- | Evaluate a LISP expression
 eval :: Env -> Value -> IOThrowsError Value
 eval _ n@(Number _) = return n
@@ -200,6 +206,7 @@ eval _ b@(Bool _) = return b
 eval _ (List [Atom "quote", value]) = return value
 eval env (Atom varName) = getBoundVariable env varName
 eval env (List [Atom "load", String fileName]) = evalFile env fileName
+eval env (List [Atom "print", rest]) = eval env rest >>= printFunction
 eval env (List [Atom "defvar", Atom varName, value]) = eval env value >>= defineVariable env varName
 eval env (List [Atom "set", Atom varName, value]) = eval env value >>= setVariable env varName
 eval env (List (Atom "defun":Atom fname:List params:body)) = defineFunction env params body >>= defineVariable env fname
@@ -219,5 +226,5 @@ eval _ bad = throwError $ InvalidSpecialForm bad
 runProgram :: String -> IO ()
 runProgram fileName = do
   env <- builtinEnv
-  result <- runIOThrows $ liftM show $ evalFile env fileName
-  putStrLn result
+  runIOThrows $ liftM show $ evalFile env fileName
+  return ()
