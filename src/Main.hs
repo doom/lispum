@@ -7,22 +7,12 @@ import qualified LispParser
 import           Prompt
 import           Synapto.Combinators
 import           Synapto.Primitives
-
--- | Parse a LISP expression from a given string
-readExpr :: String -> Lisp.ThrowsError Lisp.Value
-readExpr input =
-  let result = do
-        expr <- LispParser.expr <??> "expected LISP expression"
-        eof <?> "expected EOL after LISP expression"
-        return expr
-   in case parse result input of
-        (Left errInfo, _) -> throwError $ Lisp.Invalid errInfo
-        (Right res, _)    -> return res
+import           System.Environment
 
 -- | Evaluate a string representing a LISP expression to a string representing the result
 evaluateToPrintable :: Lisp.Env -> String -> IO String
 evaluateToPrintable env expr =
-  Lisp.runIOThrows $ liftM show $ (Lisp.liftThrows $ readExpr expr) >>= LispEvaluator.eval env
+  Lisp.runIOThrows $ liftM show $ (Lisp.liftThrows $ LispParser.readOneExpr expr) >>= LispEvaluator.eval env
 
 processLine :: Lisp.Env -> String -> IO ()
 processLine env expr = evaluateToPrintable env expr >>= putStrLn
@@ -38,4 +28,8 @@ replLoop :: IO ()
 replLoop = LispEvaluator.builtinEnv >>= repeatPrompt (prompt "> ") . processLine
 
 main :: IO ()
-main = replLoop
+main = do
+  args <- getArgs
+  if length args > 0
+    then LispEvaluator.runProgram (args !! 0)
+    else replLoop

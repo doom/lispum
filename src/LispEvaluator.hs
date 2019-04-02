@@ -1,12 +1,14 @@
 module LispEvaluator
   ( eval
   , builtinEnv
+  , runProgram
   ) where
 
 import           Control.Monad.Except
 import           Data.IORef
 import qualified Data.Map.Strict      as MapStrict
 import           Lisp
+import qualified LispParser
 
 -- | Check whether a given environment binds a given name to a variable
 isBoundVariable :: Env -> String -> IO Bool
@@ -182,6 +184,14 @@ builtinEnv = emptyEnv >>= flip defineInEnv builtinFunctions
 defineFunction :: Env -> [Value] -> [Value] -> IOThrowsError Value
 defineFunction env params body = return $ Lisp.Function (map show params) body env
 
+-- | Read all LISP expressions from a given file
+readFileExpressions :: String -> IOThrowsError [Value]
+readFileExpressions fileName = (liftIO $ readFile fileName) >>= liftThrows . LispParser.readMultipleExpr
+
+-- | Evaluate the expressions of a file into the given environment
+evalFile :: Env -> String -> IOThrowsError Value
+evalFile env fileName = readFileExpressions fileName >>= liftM last . mapM (eval env)
+
 -- | Evaluate a LISP expression
 eval :: Env -> Value -> IOThrowsError Value
 eval _ n@(Number _) = return n
@@ -189,6 +199,7 @@ eval _ s@(String _) = return s
 eval _ b@(Bool _) = return b
 eval _ (List [Atom "quote", value]) = return value
 eval env (Atom varName) = getBoundVariable env varName
+eval env (List [Atom "load", String fileName]) = evalFile env fileName
 eval env (List [Atom "defvar", Atom varName, value]) = eval env value >>= defineVariable env varName
 eval env (List [Atom "set", Atom varName, value]) = eval env value >>= setVariable env varName
 eval env (List (Atom "defun":Atom fname:List params:body)) = defineFunction env params body >>= defineVariable env fname
@@ -203,3 +214,10 @@ eval env (List (function:arguments)) = do
   args <- mapM (eval env) arguments
   callLispFunction func args
 eval _ bad = throwError $ InvalidSpecialForm bad
+
+-- | Run the LISP program stored in the given filename
+runProgram :: String -> IO ()
+runProgram fileName = do
+  env <- builtinEnv
+  result <- runIOThrows $ liftM show $ evalFile env fileName
+  putStrLn result
