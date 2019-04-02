@@ -141,6 +141,14 @@ consFunction =
           return $ List $ x : list
     }
 
+isNull :: Value -> Bool
+isNull (Number n) = n == 0
+isNull (List l)   = null l
+isNull _          = False
+
+nullFunction :: Value
+nullFunction = BuiltinFunction {argSpec = Exactly 1, call = \[arg] -> return $ Bool $ isNull arg}
+
 -- | Builtin bindings for the builtin environment
 builtinFunctions :: MapStrict.Map String Value
 builtinFunctions =
@@ -165,6 +173,7 @@ builtinFunctions =
     , ("car", carFunction)
     , ("cdr", cdrFunction)
     , ("cons", consFunction)
+    , ("null", nullFunction)
     ]
 
 -- | Import the given bindings into the given environments
