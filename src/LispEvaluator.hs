@@ -102,28 +102,42 @@ numToBoolBinop = toBoolBinop unwrapNumber
 stringToBoolBinop :: (String -> String -> Bool) -> Value
 stringToBoolBinop = toBoolBinop unwrapString
 
-car :: [Value] -> ThrowsError Value
-car [List (h:_)] = return h
-car [x]          = throwError $ TypeMismatch "list" x
-
 -- | Builtin for the CAR function
 carFunction :: Value
-carFunction = BuiltinFunction {argSpec = Exactly 1, call = car}
-
-cdr :: [Value] -> ThrowsError Value
-cdr [List (_:t)] = return $ List t
-cdr [x]          = throwError $ TypeMismatch "list" x
+carFunction =
+  BuiltinFunction
+    { argSpec = Exactly 1
+    , call =
+        \[args] -> do
+          list <- unwrapList args
+          if length list > 0
+            then return $ head list
+            else return $ Bool False
+    }
 
 -- | Builtin for the CDR function
 cdrFunction :: Value
-cdrFunction = BuiltinFunction {argSpec = Exactly 1, call = cdr}
-
-cons :: [Value] -> ThrowsError Value
-cons [x, List l] = return $ List $ x : l
+cdrFunction =
+  BuiltinFunction
+    { argSpec = Exactly 1
+    , call =
+        \[args] -> do
+          list <- unwrapList args
+          if length list > 0
+            then return $ List $ tail list
+            else return $ Bool False
+    }
 
 -- | Builtin for the CONS function
 consFunction :: Value
-consFunction = BuiltinFunction {argSpec = Exactly 2, call = cons}
+consFunction =
+  BuiltinFunction
+    { argSpec = Exactly 2
+    , call =
+        \[x, l] -> do
+          list <- unwrapList l
+          return $ List $ x : list
+    }
 
 -- | Builtin bindings for the builtin environment
 builtinFunctions :: MapStrict.Map String Value
